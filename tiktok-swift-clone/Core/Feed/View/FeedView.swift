@@ -11,51 +11,44 @@ import AVKit
 struct FeedView: View {
     @StateObject var viewModel = FeedViewModel()
     @State private var scrollPosition: String?
-    @State private var player = AVPlayer()
     
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(viewModel.posts) { post in
-                    FeedCell(post: post, player: player)
+                    FeedCell(post: post, player: viewModel.player(for: post))
                         .id(post.id)
-                        .onAppear{playInitialVideoIfNecessary()}
+                        .onAppear {
+                            viewModel.preloadPlayers(around: post)
+                            playInitialVideoIfNecessary()
+                        }
                 }
             }
             .scrollTargetLayout()
         }
-        .onAppear(){player.play()}
         .scrollPosition(id: $scrollPosition)
         .scrollTargetBehavior(.paging)
         .ignoresSafeArea()
-        .onChange(of: scrollPosition) { oldValue, newValue in
-            playVideoOnChangeOfScrollPosition(postId: newValue)
+        .scrollIndicators(.hidden)
+        .onChange(of: scrollPosition) { _, postId in
+            handleScrollChange(postId)
         }
     }
     
-    func playInitialVideoIfNecessary() {
-        guard
-            scrollPosition == nil,
-            let post = viewModel.posts.first,
-            player.currentItem == nil
-        else {
-            return
-        }
-        let item = AVPlayerItem(url: URL(string: post.videoUrl)!)
-        player.replaceCurrentItem(with: nil)
-                
-    }
-    
-    func playVideoOnChangeOfScrollPosition(postId: String?) {
-        guard
-            let currentPost = viewModel.posts.first(where: {$0.id == postId})
-        else {
-            return
-        }
+    private func handleScrollChange(_ postId: String?) {
+        guard let postId,
+              let post = viewModel.posts.first(where: { $0.id == postId })
+        else { return }
         
-        player.replaceCurrentItem(with: nil)
-        let playerItem = AVPlayerItem(url: URL(string: currentPost.videoUrl)!)
-        player.replaceCurrentItem(with: playerItem)
+        viewModel.pauseAll(except: postId)
+        viewModel.player(for: post).play()
+    }
+    
+    private func playInitialVideoIfNecessary() {
+        guard scrollPosition == nil, let firstPost = viewModel.posts.first else { return }
+        let firstPlayer = viewModel.player(for: firstPost)
+        guard firstPlayer.timeControlStatus != .playing else { return }
+        firstPlayer.play()
     }
 }
 
